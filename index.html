@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>자동 성적서 및 계측 검사 시스템 예제</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        /* Custom Excel-like grid styling */
+        .excel-table th, .excel-table td {
+            border: 1px solid #d1d5db;
+            padding: 6px 8px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .excel-input {
+            width: 100%;
+            border: 1px solid transparent;
+            background: transparent;
+            text-align: center;
+            outline: none;
+        }
+        .excel-input:focus {
+            background: #ffffff;
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col justify-between">
+
+    <header class="bg-white border-b border-gray-300 shadow-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-2 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600 text-white p-2 rounded-lg font-bold text-lg">
+                    <i class="fa-solid fa-industry mr-2"></i>LabView & Excel Auto-Test
+                </div>
+                <span class="text-xs bg-green-100 text-green-800 font-semibold px-2.5 py-1 rounded">연동 대기중 (Connected)</span>
+            </div>
+            
+            <!-- Action Toolbar Buttons (Matching image 2 top controls) -->
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="handlePasteERP()" class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold px-3 py-2 rounded shadow transition flex items-center gap-1">
+                    <i class="fa-solid fa-paste"></i> 이카운트 ERP 붙이기
+                </button>
+                <button onclick="handleStartTest()" id="startBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded shadow transition flex items-center gap-1">
+                    <i class="fa-solid fa-play"></i> 랩뷰 START (계측)
+                </button>
+                <button onclick="handleRecordInspection()" class="bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold px-3 py-2 rounded shadow transition flex items-center gap-1">
+                    <i class="fa-solid fa-clipboard-check"></i> 검사기록 저장
+                </button>
+                <button onclick="handleSavePrint()" class="bg-gray-700 hover:bg-gray-800 text-white text-xs font-semibold px-3 py-2 rounded shadow transition flex items-center gap-1">
+                    <i class="fa-solid fa-print"></i> 저장하고 인쇄
+                </button>
+                <button onclick="handleExportPDF()" class="bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3 py-2 rounded shadow transition flex items-center gap-1">
+                    <i class="fa-solid fa-file-pdf"></i> PDF저장
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-7xl w-full mx-auto p-4 space-y-4">
+
+        <!-- Notification Banner / Message Box -->
+        <div id="msgBox" class="hidden bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-3 rounded shadow-sm text-sm flex justify-between items-center">
+            <span id="msgText">시스템이 준비되었습니다.</span>
+            <button onclick="document.getElementById('msgBox').classList.add('hidden')" class="text-blue-500 hover:text-blue-700">&times;</button>
+        </div>
+
+        <!-- Tab Content Containers -->
+        <div id="tabContentContainer" class="bg-white rounded-lg shadow border border-gray-200 p-4">
+            
+            <!-- TAB 1: 측 정 (Measurement Sheet View) -->
+            <div id="sheet-측정" class="sheet-panel space-y-4">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    
+                    <!-- Left: Input Settings & Parameters -->
+                    <div class="lg:col-span-5 bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
+                        <h3 class="font-bold text-sm text-gray-700 border-b pb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-sliders text-blue-600"></i> 입력사양 및 계측기 연동 설정
+                        </h3>
+                        
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div class="bg-white p-2 rounded border">
+                                <span class="text-gray-500 block">Zero (START)</span>
+                                <input type="number" value="0.000" class="excel-input font-bold text-blue-600" id="paramZero">
+                            </div>
+                            <div class="bg-white p-2 rounded border">
+                                <span class="text-gray-500 block">Span (STOP)</span>
+                                <input type="number" value="0.000" class="excel-input font-bold text-blue-600" id="paramSpan">
+                            </div>
+                            <div class="bg-white p-2 rounded border">
+                                <span class="text-gray-500 block">간격 (STEP)</span>
+                                <input type="number" value="0" class="excel-input font-bold text-blue-600" id="paramStep">
+                            </div>
+                            <div class="bg-white p-2 rounded border">
+                                <span class="text-gray-500 block">신호종류</span>
+                                <select class="w-full text-xs bg-transparent outline-none font-semibold">
+                                    <option>V (DC Voltage)</option>
+                                    <option>mA (Current)</option>
+                                    <option>RTD / TC</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2 pt-2 text-xs">
+                            <div class="flex justify-between items-center bg-white p-2 rounded border">
+                                <span class="font-medium">2553A 온도</span>
+                                <span class="bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded font-mono" id="tempDisplay">25.8 °C</span>
+                            </div>
+                            <div class="flex justify-between items-center bg-white p-2 rounded border">
+                                <span class="font-medium">계측기 A (2553A)</span>
+                                <span class="text-gray-600">OUTPUT 1 (자동입력 중)</span>
+                            </div>
+                            <div class="flex justify-between items-center bg-white p-2 rounded border">
+                                <span class="font-medium">계측기 B, C (DMM6500)</span>
+                                <span class="text-gray-600">출력값 읽기 대기</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Serial Number & ERP info -->
+                    <div class="lg:col-span-7 bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <h3 class="font-bold text-sm text-gray-700 flex items-center gap-2">
+                                <i class="fa-solid fa-barcode text-blue-600"></i> 검사제품 및 Serial 정보 (ERP 연동)
+                            </h3>
+                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold">SHN-PDB-CH-V</span>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                            <div class="bg-white p-3 rounded border space-y-1">
+                                <span class="text-gray-500 block font-medium">검사할 제품 모델명</span>
+                                <input type="text" value="SHN-PDB-CH-V" class="w-full font-bold bg-gray-50 p-1 rounded border text-sm" readonly>
+                            </div>
+                            <div class="bg-white p-3 rounded border space-y-1">
+                                <span class="text-gray-500 block font-medium">검사할 Serial No.</span>
+                                <div class="flex gap-1">
+                                    <input type="text" id="serialInput" value="SCJ02BL0305" class="w-full font-bold bg-gray-50 p-1 rounded border text-sm">
+                                    <button onclick="showNotice('Serial이 저장되었습니다.')" class="bg-gray-200 hover:bg-gray-300 px-2 rounded text-xs font-semibold">저장</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-4 gap-2 text-center pt-2">
+                            <div class="bg-white p-2 rounded border">
+                                <span class="text-[10px] text-gray-400 block">측정시작시간</span>
+                                <span class="font-mono text-xs font-bold" id="startTimeVal">0ms</span>
+                            </div>
+                            <div class="bg-white p-2 rounded border">
+                                <span class="text-[10px] text-gray-400 block">측정횟수</span>
+                                <span class="font-mono text-xs font-bold text-blue-600">7회 고정</span>
+                            </div>
+                            <div class="bg-white p-2 rounded border">
+                                <span class="text-[10px] text-gray-400 block">측정간격(delay)</span>
+                                <span class="font-mono text-xs font-bold">0ms</span>
+                            </div>
+                            <div class="bg-white p-2 rounded border">
+                                <span class="text-[10px] text-gray-400 block">측정시간</span>
+                                <span class="font-mono text-xs font-bold" id="measureTimeVal">0sec</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto mt-4">
+                    <table class="w-full excel-table bg-white">
+                        <thead>
+                            <tr class="bg-blue-900 text-white">
+                                <th rowspan="2" class="w-16">No.</th>
+                                <th rowspan="2" class="w-28">입력값</th>
+                                <th colspan="3" class="bg-blue-800">OUTPUT 1</th>
+                                <th colspan="3" class="bg-blue-800">OUTPUT 2</th>
+                            </tr>
+                            <tr class="bg-blue-800 text-white text-xs">
+                                <th class="w-24">최소값</th>
+                                <th class="w-24">최대값</th>
+                                <th class="w-24">마지막값</th>
+                                <th class="w-24">최소값</th>
+                                <th class="w-24">최대값</th>
+                                <th class="w-24">마지막값</th>
+                            </tr>
+                        </thead>
+                        <tbody id="measurementTableBody">
+                            <!-- Rows generated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 2: 기 록 (Log Sheet View) -->
+            <div id="sheet-기록" class="sheet-panel hidden space-y-4">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-base text-gray-800"><i class="fa-solid fa-database mr-2 text-blue-600"></i>검사 기록 데이터베이스 시트 (Log)</h3>
+                    <button onclick="clearLog()" class="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded hover:bg-red-200 font-semibold">기록 초기화</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full excel-table bg-white text-xs">
+                        <thead>
+                            <tr class="bg-gray-800 text-white">
+                                <th>기록일시</th>
+                                <th>모델명</th>
+                                <th>Serial No.</th>
+                                <th>측정횟수</th>
+                                <th>상태</th>
+                                <th>성적서 자동링크 (17개 시트)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logTableBody">
+                            <tr>
+                                <td colspan="6" class="text-gray-400 py-6">저장된 검사 기록이 없습니다. '검사기록 저장' 버튼을 눌러주세요.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 3: 제 품 정 보 (Product Info View) -->
+            <div id="sheet-제품정보" class="sheet-panel hidden space-y-3 text-xs">
+                <h3 class="font-bold text-sm text-gray-800 border-b pb-2">제품 사양 및 성적서 연결 구성 (17개 시트 템플릿 정보)</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div class="bg-gray-50 p-3 rounded border">MODEL: <span class="font-bold">SHN-PDB-CH-V</span></div>
+                    <div class="bg-gray-50 p-3 rounded border">INPUT: <span class="font-bold">DC Voltage</span></div>
+                    <div class="bg-gray-50 p-3 rounded border">OUTPUT 1: <span class="font-bold">DC24V</span></div>
+                    <div class="bg-gray-50 p-3 rounded border">POWER: <span class="font-bold">AC110V</span></div>
+                </div>
+                <div class="bg-yellow-50 p-3 rounded border border-yellow-200 text-yellow-800">
+                    <i class="fa-solid fa-circle-info mr-1"></i> 랩뷰 스타트 시 해당 템플릿 엑셀 파일(Template)을 열어 지정된 셀 위치에 측정값을 바인딩하고 17개 성적서 시트로 자동 연동됩니다.
+                </div>
+            </div>
+
+            <!-- TAB 4: 검 사 장 비 (Equipment Info View) -->
+            <div id="sheet-검사장비" class="sheet-panel hidden space-y-3 text-xs">
+                <h3 class="font-bold text-sm text-gray-800 border-b pb-2">연동된 계측기 포트 설정 정보</h3>
+                <ul class="list-disc pl-5 space-y-1 text-gray-600">
+                    <li><b>2553A (A계측기):</b> 표준 발생기 (GPIB / COM3) - 자동 입력 공급</li>
+                    <li><b>DMM6500_01 (B계측기):</b> 디지털 멀티미터 (USB / COM4) - Output 1 측정</li>
+                    <li><b>DMM6500_02 (C계측기):</b> 디지털 멀티미터 (USB / COM5) - Output 2 측정</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="flex items-center bg-gray-200 rounded-b-lg border-t border-gray-300 px-2 py-1.5 overflow-x-auto gap-1 text-xs">
+            <button onclick="switchTab('측정')" class="sheet-tab px-4 py-1.5 bg-white font-bold rounded shadow-sm border-b-2 border-blue-600 text-blue-700" id="tab-btn-측정">측정</button>
+            <button onclick="switchTab('기록')" class="sheet-tab px-4 py-1.5 bg-gray-100 hover:bg-white text-gray-700 rounded" id="tab-btn-기록">기록</button>
+            <button onclick="switchTab('제품정보')" class="sheet-tab px-4 py-1.5 bg-gray-100 hover:bg-white text-gray-700 rounded" id="tab-btn-제품정보">제품정보</button>
+            <button onclick="switchTab('검사장비')" class="sheet-tab px-4 py-1.5 bg-gray-100 hover:bg-white text-gray-700 rounded" id="tab-btn-검사장비">검사장비</button>
+            <span class="text-gray-400 px-2">|</span>
+            <button onclick="switchTab('SC_1')" class="sheet-tab px-3 py-1 bg-gray-100 hover:bg-white text-gray-600 rounded">SC_1</button>
+            <button onclick="switchTab('SC_2')" class="sheet-tab px-3 py-1 bg-gray-100 hover:bg-white text-gray-600 rounded">SC_2</button>
+            <button onclick="switchTab('SC_3')" class="sheet-tab px-3 py-1 bg-gray-100 hover:bg-white text-gray-600 rounded">SC_3</button>
+            <span class="text-gray-400">... (총 17개 성적서 시트)</span>
+        </div>
+    </main>
+
+    <script>
+        // Initialize Measurement Table Rows (7 rows as seen in image)
+        const tableBody = document.getElementById('measurementTableBody');
+        const defaultRows = [
+            { no: 1, input: 0.000 },
+            { no: 2, input: 0.000 },
+            { no: 3, input: 0.000 },
+            { no: 4, input: 0.000 },
+            { no: 5, input: 0.000 },
+            { no: 6, input: 0.000 },
+            { no: 7, input: 0.000 },
+        ];
+
+        let inspectionLogs = [];
+
+        function renderTable(data = defaultRows) {
+            tableBody.innerHTML = '';
+            data.forEach((row, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="font-bold bg-gray-50">${row.no}</td>
+                    <td><input type="number" value="${row.input.toFixed(3)}" class="excel-input" id="in_${idx}"></td>
+                    <td><input type="text" value="${row.out1_min || ''}" class="excel-input text-gray-600" id="o1_min_${idx}" placeholder="-"></td>
+                    <td><input type="text" value="${row.out1_max || ''}" class="excel-input text-gray-600" id="o1_max_${idx}" placeholder="-"></td>
+                    <td><input type="text" value="${row.out1_last || ''}" class="excel-input text-gray-600" id="o1_last_${idx}" placeholder="-"></td>
+                    <td><input type="text" value="${row.out2_min || ''}" class="excel-input text-gray-600" id="o2_min_${idx}" placeholder="-"></td>
+                    <td><input type="text" value="${row.out2_max || ''}" class="excel-input text-gray-600" id="o2_max_${idx}" placeholder="-"></td>
+                    <td><input type="text" value="${row.out2_last || ''}" class="excel-input text-gray-600" id="o2_last_${idx}" placeholder="-"></td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+
+        renderTable();
+
+        // Notification helper
+        function showNotice(text, type = 'blue') {
+            const box = document.getElementById('msgBox');
+            const msg = document.getElementById('msgText');
+            msg.innerText = text;
+            box.className = `bg-${type}-50 border-l-4 border-${type}-500 text-${type}-700 p-3 rounded shadow-sm text-sm flex justify-between items-center`;
+            box.classList.remove('hidden');
+            setTimeout(() => box.classList.add('hidden'), 4000);
+        }
+
+        // Tab Switching Logic
+        function switchTab(tabName) {
+            document.querySelectorAll('.sheet-panel').forEach(panel => panel.classList.add('hidden'));
+            document.querySelectorAll('.sheet-tab').forEach(btn => {
+                btn.className = "sheet-tab px-4 py-1.5 bg-gray-100 hover:bg-white text-gray-700 rounded text-xs";
+            });
+
+            const targetPanel = document.getElementById(`sheet-${tabName}`);
+            if (targetPanel) {
+                targetPanel.classList.remove('hidden');
+            } else {
+                // For generic SC tabs or uncreated panels, show product info as fallback
+                document.getElementById('sheet-제품정보').classList.remove('hidden');
+            }
+
+            const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+            if (activeBtn) {
+                activeBtn.className = "sheet-tab px-4 py-1.5 bg-white font-bold rounded shadow-sm border-b-2 border-blue-600 text-blue-700 text-xs";
+            }
+        }
+
+        // 1. ERP Paste Simulator
+        function handlePasteERP() {
+            showNotice('이카운트 ERP에서 생산내역(Serial 및 규격)을 성공적으로 불러와 붙여넣었습니다.', 'green');
+            document.getElementById('serialInput').value = 'SCJ' + Math.floor(100000 + Math.random() * 900000);
+        }
+
+        // 2. Start Test (LabVIEW instrument simulation)
+        function handleStartTest() {
+            const btn = document.getElementById('startBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 계측 중...';
+            showNotice('랩뷰 프로그램이 구동되어 A계측기에서 입력값을 주고 B, C계측기 값을 수신합니다.', 'emerald');
+
+            let step = 0;
+            const interval = setInterval(() => {
+                step++;
+                // Simulate random output values populated in the table
+                for (let i = 0; i < 7; i++) {
+                    const baseInput = (i * 1.5).toFixed(3);
+                    document.getElementById(`in_${i}`).value = baseInput;
+                    document.getElementById(`o1_min_${i}`).value = (parseFloat(baseInput) * 0.99 + Math.random()*0.05).toFixed(3);
+                    document.getElementById(`o1_max_${i}`).value = (parseFloat(baseInput) * 1.01 + Math.random()*0.05).toFixed(3);
+                    document.getElementById(`o1_last_${i}`).value = (parseFloat(baseInput) * 1.00 + Math.random()*0.02).toFixed(3);
+                    
+                    document.getElementById(`o2_min_${i}`).value = (parseFloat(baseInput) * 0.98 + Math.random()*0.04).toFixed(3);
+                    document.getElementById(`o2_max_${i}`).value = (parseFloat(baseInput) * 1.02 + Math.random()*0.04).toFixed(3);
+                    document.getElementById(`o2_last_${i}`).value = (parseFloat(baseInput) * 1.00 + Math.random()*0.03).toFixed(3);
+                }
+                document.getElementById('startTimeVal').innerText = (step * 150) + 'ms';
+                document.getElementById('measureTimeVal').innerText = (step * 0.5).toFixed(1) + 'sec';
+
+                if (step >= 5) {
+                    clearInterval(interval);
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-play"></i> 랩뷰 START (계측)';
+                    showNotice('계측이 완료되었습니다. 결과값이 엑셀 시트에 입력되었습니다.', 'blue');
+                }
+            }, 300);
+        }
+
+        // 4. Record Inspection Log
+        function handleRecordInspection() {
+            const serial = document.getElementById('serialInput').value;
+            const now = new Date().toLocaleString();
+            inspectionLogs.push({
+                time: now,
+                model: 'SHN-PDB-CH-V',
+                serial: serial,
+                count: '7회',
+                status: '정상 완료'
+            });
+
+            updateLogTable();
+            showNotice('검사기록이 [기록] 시트에 저장되었으며, 17개 성적서 양식 시트에 자동 연결되었습니다.', 'amber');
+            switchTab('기록');
+        }
+
+        function updateLogTable() {
+            const tbody = document.getElementById('logTableBody');
+            if (inspectionLogs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-gray-400 py-6">저장된 검사 기록이 없습니다.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = '';
+            inspectionLogs.forEach((log) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="font-mono">${log.time}</td>
+                    <td class="font-bold">${log.model}</td>
+                    <td class="font-mono text-blue-600 font-bold">${log.serial}</td>
+                    <td>${log.count}</td>
+                    <td><span class="bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold">${log.status}</span></td>
+                    <td><span class="text-blue-600 underline cursor-pointer" onclick="showNotice('17개 성적서 시트 바인딩 완료')">성적서_17개_연동.xlsx</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function clearLog() {
+            inspectionLogs = [];
+            updateLogTable();
+            showNotice('기록이 초기화되었습니다.', 'red');
+        }
+
+        function handleSavePrint() {
+            showNotice('현재 성적서 데이터를 저장하고 기본 프린터로 자동 인쇄 명령을 전송했습니다.', 'gray');
+        }
+
+        function handleExportPDF() {
+            showNotice('지정된 폴더에 17개 성적서 시트가 PDF 파일로 일괄 변환 및 저장되었습니다.', 'rose');
+        }
+    </script>
+</body>
+</html>
